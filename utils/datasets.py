@@ -15,6 +15,7 @@ from multiprocessing.pool import Pool, ThreadPool
 from pathlib import Path
 from threading import Thread
 from zipfile import ZipFile
+import copy
 
 import cv2
 import numpy as np
@@ -386,6 +387,7 @@ class LoadImagesAndLabels(Dataset):
         self.image_weights = image_weights
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
+        # self.mosaic = False
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
         self.path = path
@@ -558,6 +560,8 @@ class LoadImagesAndLabels(Dataset):
         if mosaic:
             # Load mosaic
             img, labels = load_mosaic(self, index)
+            # org_img, _, _ = load_image(self, index)
+            # org_labels = self.labels[index].copy()
             shapes = None
 
             # MixUp augmentation
@@ -567,16 +571,20 @@ class LoadImagesAndLabels(Dataset):
         else:
             # Load image
             img, (h0, w0), (h, w) = load_image(self, index)
-
+            # org_img = copy.deepcopy(img)
+            
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
             img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             labels = self.labels[index].copy()
+            # print(labels)
+            
+            # org_labels = copy.deepcopy(labels)
             if labels.size:  # normalized xywh to pixel xyxy format
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
-
+                # print(labels)
             if self.augment:
                 img, labels = random_perspective(img, labels,
                                                  degrees=hyp['degrees'],
@@ -588,7 +596,7 @@ class LoadImagesAndLabels(Dataset):
         nl = len(labels)  # number of labels
         if nl:
             labels[:, 1:5] = xyxy2xywhn(labels[:, 1:5], w=img.shape[1], h=img.shape[0], clip=True, eps=1E-3)
-
+            # print(labels)
         if self.augment:
             # Albumentations
             img, labels = self.albumentations(img, labels)
@@ -615,6 +623,32 @@ class LoadImagesAndLabels(Dataset):
         labels_out = torch.zeros((nl, 6))
         if nl:
             labels_out[:, 1:] = torch.from_numpy(labels)
+
+        # img_h, img_w, _ = img.shape
+        # cx = labels[0][1]
+        # cy = labels[0][2]
+        # w_ = labels[0][3]
+        # h_ = labels[0][4]
+        # xmin = int((cx - (w_/2))*img_w)
+        # ymin = int((cy - (h_/2))*img_h)
+        # xmax = int((cx + (w_/2))*img_w)
+        # ymax = int((cy + (h_/2))*img_h)
+        # cv2.rectangle(img, (xmin, ymin), (xmax, ymax), (0, 0, 255), 1)
+        
+        # img_h, img_w, _ = org_img.shape
+        # cx = org_labels[0][1]
+        # cy = org_labels[0][2]
+        # w_ = org_labels[0][3]
+        # h_ = org_labels[0][4]
+        # xmin = int((cx - (w_/2))*img_w)
+        # ymin = int((cy - (h_/2))*img_h)
+        # xmax = int((cx + (w_/2))*img_w)
+        # ymax = int((cy + (h_/2))*img_h)
+        # cv2.rectangle(org_img, (xmin, ymin), (xmax, ymax), (255, 0, 0), 1)
+
+        # cv2.imshow('image', img)
+        # cv2.imshow('org_image', org_img)
+        # cv2.waitKey(0)
 
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB

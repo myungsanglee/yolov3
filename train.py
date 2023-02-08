@@ -14,7 +14,6 @@ import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -24,6 +23,7 @@ from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import SGD, Adam, lr_scheduler
 from tqdm import tqdm
+from torchinfo import summary
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # root directory
@@ -122,6 +122,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     else:
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
 
+    # summary(model, input_size=(1, 3, opt.imgsz, opt.imgsz), device='cpu')
+    # sys.exit(1)
+    
     # Freeze
     freeze = [f'model.{x}.' for x in range(freeze)]  # layers to freeze
     for k, v in model.named_parameters():
@@ -220,7 +223,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     # Process 0
     if RANK in [-1, 0]:
         val_loader = create_dataloader(val_path, imgsz, batch_size // WORLD_SIZE * 2, gs, single_cls,
-                                       hyp=hyp, cache=None if noval else opt.cache, rect=True, rank=-1,
+                                       hyp=hyp, cache=None if noval else opt.cache, rect=False, rank=-1,
                                        workers=workers, pad=0.5,
                                        prefix=colorstr('val: '))[0]
 
@@ -316,6 +319,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             # Forward
             with amp.autocast(enabled=cuda):
                 pred = model(imgs)  # forward
+                # print(f'\npred_size: \n{pred[0].size()}\n{pred[1].size()}\n{pred[2].size()}\n')
+                # print(f'tragets_size: {targets.size()}\n')
+                # print(targets, '\n')
                 loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
                 if RANK != -1:
                     loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
